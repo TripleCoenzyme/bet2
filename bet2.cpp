@@ -839,5 +839,6 @@ py::array_t<float> run_bet(py::array_t<float, py::array::f_style | py::array::fo
 }
 
 PYBIND11_MODULE(bet2, m){
-  m.def("run_bet", &run_bet, "Run BET in python", py::arg("4D_mag_image"), py::arg("voxel_size"), py::arg("fractional_threshold") = 0.4, py::arg("gradient_threshold") = 0);
+  m.def("run_bet", &run_bet, "Run BET in python. Only support 4D (x, y, z, echo) numpy float array.",
+        py::arg("4D_mag_image"), py::arg("voxel_size"), py::arg("fractional_threshold") = 0.4, py::arg("gradient_threshold") = 0);
 }
