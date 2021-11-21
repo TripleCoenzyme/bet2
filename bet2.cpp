@@ -75,6 +75,10 @@
 #include <stdio.h>
 #include <cmath>
 #include <algorithm>
+#include <omp.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+#include <pybind11/stl.h>
 
 #include "utils/options.h"
 #include "newimage/newimageall.h"
@@ -84,6 +88,7 @@ using namespace std;
 using namespace NEWIMAGE;
 using namespace Utilities;
 using namespace mesh;
+namespace py = pybind11;
 
 void noMoreMemory()
 {
@@ -102,49 +107,6 @@ const double lambda_fit = .1;
 
 
 vector<float> empty_vector(0, 0);
-
-string title="BET (Brain Extraction Tool) v2.1 - FMRIB Analysis Group, Oxford";
-string examples="bet2 <input_fileroot> <output_fileroot> [options]";
-
-Option<bool> verbose(string("-v,--verbose"), false, 
-		     string("switch on diagnostic messages"), 
-		     false, no_argument);
-Option<bool> generate_mesh(string("-e,--mesh"), false, 
-		     string("generates brain surface as mesh in vtk format"), 
-		     false, no_argument);
-Option<bool> help(string("-h,--help"), false, 
-		     string("displays this help, then exits"), 
-		     false, no_argument);
-Option<bool> outline(string("-o,--outline"), false, 
-		     string("generate brain surface outline overlaid onto original image"), 
-		     false, no_argument);
-Option<bool> skull(string("-s,--skull"), false, 
-		   string("generate approximate skull image"),
-		   false, no_argument);
-Option<string> generate_mask(string("-m,--mask"), string(""),
-		  string("~<m>\tgenerate binary brain mask"), 
-      false, requires_argument);
-Option<bool> no_output(string("-n,--nooutput"), false, 
-		       string("don't generate segmented brain image output"), 
-		       false, no_argument);
-Option<bool> apply_thresholding(string("-t,--threshold"), false, 
-				string("-apply thresholding to segmented brain image and mask"), 
-				false, no_argument);
-Option<float> fractional_threshold(string("-f"), 0.5,
-				    string("~<f>\t\tfractional intensity threshold (0->1); default=0.5; smaller values give larger brain outline estimates"), false, requires_argument);
-
-Option<float> gradient_threshold(string("-g"), 0.0,
-				 string("~<g>\t\tvertical gradient in fractional intensity threshold (-1->1); default=0; positive values give larger brain outline at bottom, smaller at top"), false, requires_argument);
-
-Option<float> smootharg(string("-w,--smooth"), 1.0,
-                     string("~<r>\tsmoothness factor; default=1; values smaller than 1 produce more detailed brain surface, values larger than one produce smoother, less detailed surface"), false, requires_argument);
-
-Option<float> radiusarg(string("-r,--radius"), 0.0,
-		     string("~<r>\thead radius (mm not voxels); initial surface sphere is set to half of this"), false, requires_argument);
-
-Option<float> centerarg(string("-c"), 0.0,
-				 string("~<x y z>\tcentre-of-gravity (voxels not mm) of initial mesh surface."), false, requires_3_arguments);
-
 
 void draw_segment(volume<short>& image, const Pt& p1, const Pt& p2)
 {
@@ -651,208 +613,173 @@ volume<float> find_skull (volume<float> & image, const Mesh & m, const double t2
 }
 
 
-int main(int argc, char *argv[]) {
+volume <float> read_volume_fromBuffer(float* tbuffer, short sx, short sy, short sz, const vector<float>& vs)
+{
+  volume<float> target;
+  target.reinitialize(sx, sy, sz, tbuffer, false);
+  target.setdims(vs[0], vs[1], vs[2]);
+  
+  return target;
+}
 
-  //parsing options
-  OptionParser options(title, examples);
-  options.add(outline);
-  options.add(generate_mask);
-  options.add(skull);
-  options.add(no_output);
-  options.add(fractional_threshold);
-  options.add(gradient_threshold);
-  options.add(radiusarg);
-  options.add(smootharg);
 
-  options.add(centerarg);
-  options.add(apply_thresholding);
-  options.add(generate_mesh);
-  options.add(verbose);
-  options.add(help);
-  
-  if (argc < 3) {
-    if (argc == 1) {options.usage(); exit(EXIT_FAILURE);};
-    if (argc>1)
-      {
-	string s = argv[1];
-	if (s.find("-h")!=string::npos | s.find("--help")!=string::npos ) 
-	  {options.usage(); exit (0);}
-      }
-    cerr<<"error: not enough arguments, use bet -h for help"<<endl;
-    exit (-1);
-  }
-  
-  vector<string> strarg;
-  for (int i=0; i<argc; i++)
-    strarg.push_back(argv[i]);
-  
-  string inputname=strarg[1];
-  string outputname=strarg[2];
-  
-  if (inputname.find("-")==0 || outputname.find("-")==0 )
-    {cerr<<"error : two first arguments should be input and output names, see bet -h for help"<<endl; exit(-1);};
- 
-  /*
-  int c=0;
-  for (int i=0; i<argc; i++)
-    if (i!=1 & i!=2)
-      {
-	strcpy(argv[c], strarg[i].c_str());
-	c++;
-      }
-  
-  argc -=2;
-  */
+py::array_t<short> write_volume_toPython(vector<volume<short>>& mask)
+{
+  int xsize = mask[0].xsize();
+  int ysize = mask[0].ysize();
+  int zsize = mask[0].zsize();
+  int echos = mask.size();
 
-  try {
-    options.parse_command_line(argc, argv, 2);  // skip first 2 argv
-  }
-  catch(X_OptionError& e) {
-    options.usage();
-    cerr << endl << e.what() << endl;
-    exit(EXIT_FAILURE);
-  } 
-  catch(std::exception &e) {
-    cerr << e.what() << endl;
-  } 
+  auto output = py::array_t<short>(xsize*ysize*zsize*echos);
+  output.resize({xsize, ysize, zsize, echos});
   
-  if (help.value()) {options.usage(); return 0;};
+  #pragma omp parallel for
+  for (int e=0; e<echos; e++)
+    for (int k=0; k<zsize; k++)
+      for (int j=0; j<ysize; j++)
+        for (int i=0; i<xsize; i++)
+          output.mutable_at(i, j, k, e) = mask[e].value(i, j, k);
+  return output;
+}
 
-  string out = outputname;
-  if (out.find(".hdr")!=string::npos) out.erase(out.find(".hdr"), 4);
-  if (out.find(".img")!=string::npos) out.erase(out.find(".hdr"), 4);
-  string in = inputname;
-  if (in.find(".hdr")!=string::npos) in.erase(in.find(".hdr"), 4);
-  if (in.find(".img")!=string::npos) in.erase(in.find(".hdr"), 4);
-  if (out == "default__default") {out=in+"_brain";}
-  
 
-  //set a memory hanlder that displays an error message
-  set_new_handler(noMoreMemory);
-
+py::array_t<float> run_bet(py::array_t<float>& arr, vector<float>& vs, float fractional_threshold = 0.4, float gradient_threshold = 0.0) {
 
   //the real program
-
-  volume<float> testvol;
   
-  if (read_volume(testvol,in.c_str())<0)  return -1;
+  auto buf = arr.unchecked<4>();
+  short sx = (short) buf.shape(1);
+  short sy = (short) buf.shape(2);
+  short sz = (short) buf.shape(3);
+  short st = (short) buf.shape(0);
+  float* tbuffer = (float*)buf.data(0,0,0,0);
+  vector<volume<short>> output(st);
 
-  double xarg = 0, yarg = 0, zarg = 0;
-  if (centerarg.set())
+  #pragma omp parallel for
+  for (int i=0; i<st; i++){
+    volume<float> testvol;
+    float* echo_buffer = &tbuffer[arr.index_at(i,0,0,0)];
+    testvol = read_volume_fromBuffer(echo_buffer, sx, sy, sz, vs);
+    // if (read_volume(testvol,in.c_str())<0)  {throw runtime_error("load error");}
+    double xarg = 0, yarg = 0, zarg = 0;
+    float smootharg = 1.0;
+
+    
+    // if (read_volume(testvol,in.c_str())<0)  return -1;
+
+    /*double xarg = 0, yarg = 0, zarg = 0;
+    if (centerarg.set())
+      {
+        
+        if (centerarg.value().size()!=3)
     {
-      /*
-      if (centerarg.value().size()!=3)
-	{
-	  cerr<<"three parameters expected for center option !"<<endl;
-	  cerr<<"please check there is no space after commas."<<endl;
-	  exit (-1);
-	}
-      else
-      */
-	{
-	  xarg = (double) centerarg.value(0);
-	  yarg = (double) centerarg.value(1);
-	  zarg = (double) centerarg.value(2);
-	  ColumnVector v(4);
-	  v << xarg << yarg << zarg << 1.0;
-	  v = testvol.niftivox2newimagevox_mat() * v;
-	  xarg = v(1);  yarg = v(2);  zarg = v(3);
-	}
+      cerr<<"three parameters expected for center option !"<<endl;
+      cerr<<"please check there is no space after commas."<<endl;
+      exit (-1);
     }
-  
-  const double bet_main_parameter = pow(fractional_threshold.value(), .275);
-  
-
-  // 2D kludge (worked for bet, but not here in bet2, hohum)
-  if (testvol.xsize()*testvol.xdim()<20) testvol.setxdim(200);
-  if (testvol.ysize()*testvol.ydim()<20) testvol.setydim(200);
-  if (testvol.zsize()*testvol.zdim()<20) testvol.setzdim(200);
-  
-  Mesh m;
-  make_mesh_from_icosa(5, m); 
-  
-  
-  bet_parameters bp = adjust_initial_mesh(testvol, m, radiusarg.value(), xarg, yarg, zarg);
-  
-  if (verbose.value())
+        else
+        
     {
-      cout<<"min "<<bp.min<<" thresh2 "<<bp.t2<<" thresh "<<bp.t<<" thresh98 "<<bp.t98<<" max "<<bp.max<<endl;
-      cout<<"c-of-g "<<bp.cog.X<<" "<<bp.cog.Y<<" "<<bp.cog.Z<<" mm"<<endl;
-      cout<<"radius "<<bp.radius<<" mm"<<endl;
-      cout<<"median within-brain intensity "<<bp.tm<<endl;
+      xarg = (double) centerarg.value(0);
+      yarg = (double) centerarg.value(1);
+      zarg = (double) centerarg.value(2);
+      ColumnVector v(4);
+      v << xarg << yarg << zarg << 1.0;
+      v = testvol.niftivox2newimagevox_mat() * v;
+      xarg = v(1);  yarg = v(2);  zarg = v(3);
     }
-  
-
-  Mesh moriginal=m;
-  
-  const double rmin=3.33 * smootharg.value();
-  const double rmax=10 * smootharg.value();
-  const double E = (1/rmin + 1/rmax)/2.;
-  const double F = 6./(1/rmin - 1/rmax);
-  const int nb_iter = 1000;
-  const double self_intersection_threshold = 4000;
-  
-  double l = 0;
-  for (int i=0; i<nb_iter; i++)
-    {
-      step_of_computation(testvol, m, bet_main_parameter, 0, 0, i, l, bp.t2, bp.tm, bp.t, E, F, bp.cog.Z, bp.radius, gradient_threshold.value());
-
-      // display progress, revised by liangfu
-      if ((i%int(nb_iter*.01f)) == 1){
-        fprintf(stdout, "[%3.0f%%] BET: Performing %d of %d iterations.\t\t\r",
-          i*100.f / nb_iter, i, nb_iter);
-        fflush(stdout);
       }
-    }
-  
-  double tmp = m.self_intersection(moriginal);
-  if (verbose.value() && !generate_mesh.value())
-    cout<<"self-intersection total "<<tmp<<" (threshold=4000.0) "<<endl;
-  
-  bool self_intersection;
-  if (!generate_mesh.value()) self_intersection = (tmp > self_intersection_threshold);  
-  else (self_intersection = m.real_self_intersection());
-  int pass = 0;  
+    */
 
-  if (verbose.value() && generate_mesh.value() && self_intersection)
-    cout<<"the mesh is self-intersecting "<<endl;
+    const double bet_main_parameter = pow(fractional_threshold, .275);
+    
+
+    // 2D kludge (worked for bet, but not here in bet2, hohum)
+    if (testvol.xsize()*testvol.xdim()<20) testvol.setxdim(200);
+    if (testvol.ysize()*testvol.ydim()<20) testvol.setydim(200);
+    if (testvol.zsize()*testvol.zdim()<20) testvol.setzdim(200);
+    
+    Mesh m;
+    make_mesh_from_icosa(5, m); 
+    
+    
+    bet_parameters bp = adjust_initial_mesh(testvol, m, 0.0, xarg, yarg, zarg);
+    
+    /*if (verbose.value())
+      {
+        cout<<"min "<<bp.min<<" thresh2 "<<bp.t2<<" thresh "<<bp.t<<" thresh98 "<<bp.t98<<" max "<<bp.max<<endl;
+        cout<<"c-of-g "<<bp.cog.X<<" "<<bp.cog.Y<<" "<<bp.cog.Z<<" mm"<<endl;
+        cout<<"radius "<<bp.radius<<" mm"<<endl;
+        cout<<"median within-brain intensity "<<bp.tm<<endl;
+      }*/
+    
+
+    Mesh moriginal=m;
+    
+    const double rmin=3.33 * smootharg;
+    const double rmax=10 * smootharg;
+    const double E = (1/rmin + 1/rmax)/2.;
+    const double F = 6./(1/rmin - 1/rmax);
+    const int nb_iter = 1000;
+    const double self_intersection_threshold = 4000;
+    
+    double l = 0;
+    for (int i=0; i<nb_iter; i++)
+      {
+        step_of_computation(testvol, m, bet_main_parameter, 0, 0, i, l, bp.t2, bp.tm, bp.t, E, F, bp.cog.Z, bp.radius, gradient_threshold);
+      }
+    
+    double tmp = m.self_intersection(moriginal);
+    // if (verbose.value() && !generate_mesh.value())
+    //   cout<<"self-intersection total "<<tmp<<" (threshold=4000.0) "<<endl;
+    
+    bool self_intersection;
+    // if (!generate_mesh.value()) self_intersection = (tmp > self_intersection_threshold);  
+    // else (self_intersection = m.real_self_intersection());
+    self_intersection = (tmp > self_intersection_threshold);
+    int pass = 0;  
+
+    // if (verbose.value() && generate_mesh.value() && self_intersection)
+    //   cout<<"the mesh is self-intersecting "<<endl;
 
 
-  //self-intersection treatment
-  while (self_intersection)
+    //self-intersection treatment
+    while (self_intersection)
+      {
+        // if (self_intersection && verbose.value()) {cout<<"thus will rerun with higher smoothness constraint"<<endl;};
+        m = moriginal;
+        l = 0;
+        pass++;
+        for (int i=0; i<nb_iter; i++)
     {
-      if (self_intersection && verbose.value()) {cout<<"thus will rerun with higher smoothness constraint"<<endl;};
-      m = moriginal;
-      l = 0;
-      pass++;
-      for (int i=0; i<nb_iter; i++)
-	{
-	  double incfactor = pow (10.0,(double) pass + 1);
-	  if (i > .75 * (double)nb_iter)
-	    incfactor = 4.*(1. - i/(double)nb_iter) * (incfactor - 1.) + 1.;
-	  step_of_computation(testvol, m, bet_main_parameter, pass, incfactor, i, l, bp.t2, bp.tm, bp.t, E, F, bp.cog.Z, bp.radius, gradient_threshold.value());
-	}
-      double tmp = m.self_intersection(moriginal);
-  
-      self_intersection = (tmp > self_intersection_threshold);
-      if (!generate_mesh.value()) self_intersection = (tmp > self_intersection_threshold);  
-      else (self_intersection = m.real_self_intersection());
-      
-      if (verbose.value() && !generate_mesh.value())
-	cout<<"self-intersection total "<<tmp<<" (threshold=4000.0) "<<endl;
-      
-      if (verbose.value() && generate_mesh.value() && self_intersection)
-	cout<<"the mesh is self-intersecting"<<endl;
-	
-      if (pass==10) // give up
-	self_intersection=0;
+      double incfactor = pow (10.0,(double) pass + 1);
+      if (i > .75 * (double)nb_iter)
+        incfactor = 4.*(1. - i/(double)nb_iter) * (incfactor - 1.) + 1.;
+      step_of_computation(testvol, m, bet_main_parameter, pass, incfactor, i, l, bp.t2, bp.tm, bp.t, E, F, bp.cog.Z, bp.radius, gradient_threshold);
     }
-  
+        double tmp = m.self_intersection(moriginal);
+    
+        self_intersection = (tmp > self_intersection_threshold);
+        // if (!generate_mesh.value()) self_intersection = (tmp > self_intersection_threshold);  
+        // else (self_intersection = m.real_self_intersection());
+        
+        /// if (verbose.value() && !generate_mesh.value())
+    // cout<<"self-intersection total "<<tmp<<" (threshold=4000.0) "<<endl;
+        
+        // if (verbose.value() && generate_mesh.value() && self_intersection)
+    // cout<<"the mesh is self-intersecting"<<endl;
+    
+        if (pass==10) // give up
+    self_intersection=0;
+      }
+    
 
-  //display
-  volume<short> brainmask = make_mask_from_mesh(testvol, m);
-  
-  if (apply_thresholding.value())
+    //display
+    volume<short> brainmask = make_mask_from_mesh(testvol, m);
+    output[i] = (short)1 - brainmask;
+  }
+  return write_volume_toPython(output);
+  /* if (apply_thresholding.value())
     {
       int xsize = testvol.xsize();
       int ysize = testvol.ysize();
@@ -861,9 +788,9 @@ int main(int argc, char *argv[]) {
 	for (int j=0; j<ysize; j++)
 	  for (int i=0; i<xsize; i++)
 	    if (testvol.value(i, j, k) < bp.t) brainmask.value(i, j, k) = 1;
-    }
+    }*/
   
-  if (!(no_output.value()))
+  /*if (!(no_output.value()))
     {
       int xsize = testvol.xsize();
       int ysize = testvol.ysize();
@@ -874,9 +801,9 @@ int main(int argc, char *argv[]) {
 	  for (int i=0; i<xsize; i++)
 	    output.value(i, j, k) = (1-brainmask.value(i, j, k)) * output.value(i, j, k);
       if (save_volume(output,out.c_str())<0)  return -1;
-    }  
+    }  */
   
-  if (generate_mask.value().size()>0){
+  /*if (generate_mask.value().size()>0){
       if (save_volume((short)1 - brainmask, generate_mask.value().c_str())<0)  return -1;
   }else{
     string maskstr = out + "_mask";
@@ -907,7 +834,10 @@ int main(int argc, char *argv[]) {
       if (save_volume(bskull, skullstr.c_str())<0)  return -1;
     }
 
-  return 0;
+  return 0;*/
   
 }
 
+PYBIND11_MODULE(bet2, m){
+  m.def("run_bet", &run_bet, "Run BET in python", py::arg("4D_mag_image"), py::arg("voxel_size"), py::arg("fractional_threshold") = 0.4, py::arg("gradient_threshold") = 0);
+}

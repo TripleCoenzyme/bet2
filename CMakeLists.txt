@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 2.8.7)
+cmake_minimum_required(VERSION 3.15.0)
 
 project(bet2)
 
+add_compile_options(-openmp)
 # set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_MODULE_PATH ${bnviewer_SOURCE_DIR}/CMake)
 
@@ -36,6 +37,7 @@ add_subdirectory(meshclass)
 add_subdirectory(miscmaths)
 add_subdirectory(utils)
 add_subdirectory(vtkzlib)
+add_subdirectory(pybind11)
 
 set( Srcs bet2.cpp)
 ##set( Hdrs bet2.cpp)
@@ -46,8 +48,9 @@ include_directories(
 	newmat fslio newimage
 )
 
-add_executable(bet2 ${Srcs} )
-target_link_libraries(bet2
+# add_executable(bet2 ${Srcs} )
+pybind11_add_module(bet2 ${Srcs})
+target_link_libraries(bet2 PRIVATE
 	newmat fslio newimage niftiio znzlib meshclass utils miscmaths vtkzlib
 	)
 
