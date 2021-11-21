@@ -643,22 +643,22 @@ py::array_t<short> write_volume_toPython(vector<volume<short>>& mask)
 }
 
 
-py::array_t<float> run_bet(py::array_t<float>& arr, vector<float>& vs, float fractional_threshold = 0.4, float gradient_threshold = 0.0) {
+py::array_t<float> run_bet(py::array_t<float, py::array::f_style | py::array::forcecast>& arr, vector<float>& vs, float fractional_threshold = 0.4, float gradient_threshold = 0.0) {
 
   //the real program
   
   auto buf = arr.unchecked<4>();
-  short sx = (short) buf.shape(1);
-  short sy = (short) buf.shape(2);
-  short sz = (short) buf.shape(3);
-  short st = (short) buf.shape(0);
+  short sx = (short) buf.shape(0);
+  short sy = (short) buf.shape(1);
+  short sz = (short) buf.shape(2);
+  short st = (short) buf.shape(3);
   float* tbuffer = (float*)buf.data(0,0,0,0);
   vector<volume<short>> output(st);
 
   #pragma omp parallel for
   for (int i=0; i<st; i++){
     volume<float> testvol;
-    float* echo_buffer = &tbuffer[arr.index_at(i,0,0,0)];
+    float* echo_buffer = &tbuffer[arr.index_at(0,0,0,i)];
     testvol = read_volume_fromBuffer(echo_buffer, sx, sy, sz, vs);
     // if (read_volume(testvol,in.c_str())<0)  {throw runtime_error("load error");}
     double xarg = 0, yarg = 0, zarg = 0;
