@@ -16,7 +16,7 @@ To install:
 
   git clone --recursive https://github.com/TripleCoenzyme/bet2.git
   
-  pip install bet2
+  pip install ./bet2
   
 To use:
 
