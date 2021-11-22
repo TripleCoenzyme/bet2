@@ -129,7 +129,7 @@ setup(
     ext_modules=[CMakeExtension("bet2")],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
-    install_requires = ["numpy", "SimpleITK>=2.0"],
+    install_requires = ["numpy", "SimpleITK>=2.0", "cmake>=3.15.0"],
     # extras_require={"test": ["pytest>=6.0"]},
     python_requires=">=3.6",
 )
