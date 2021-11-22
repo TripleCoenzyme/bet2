@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.15.0)
 project(bet2)
 
 add_compile_options(-openmp)
+if (UNIX)
+	add_compile_options(-fPIC) # for WSL compilation, not tested on native Linux
+endif()
+
 # set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_MODULE_PATH ${bnviewer_SOURCE_DIR}/CMake)
 
