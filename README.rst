@@ -7,6 +7,7 @@ The following features are added:
 
  * reconfigured with CMake
  * support windows platform
+ * python wrapper based on `pybind11 <https://github.com/pybind/pybind11>`_, allow to install with pip
  * use 4D numpy array as input and output for multi-echo GRE images (new)
  * enable openmp (new)
 
