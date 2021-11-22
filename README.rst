@@ -32,6 +32,8 @@ where
 * **voxel_size** is a list containing spatial resolution in (x, y, z)
 * **f_th** and **g_th** is *OPTIONAL* fractional_threshold and gradient_threshold in original BET (with -f and -g). Default set to 0.4 and 0.
 
+a test.py and a tmp.nii test data can be found in the path.
+
 Known BUG:
 
 1. Output array dtype will be numpy.float32 but not int as given. Please convert output to numpy.uint8 to save space.
