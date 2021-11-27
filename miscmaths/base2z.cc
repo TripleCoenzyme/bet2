@@ -68,7 +68,7 @@
 
 #include <cmath>
 #include "base2z.h"
-#include "libprob.h"
+#include "cprob.h"
 
 namespace MISCMATHS {
 
@@ -76,7 +76,7 @@ namespace MISCMATHS {
 
   float Base2z::logbeta(float v, float w)
   {
-    return MISCMATHS::lgam(v)+MISCMATHS::lgam(w)-MISCMATHS::lgam(v+w);
+    return lgam(v)+lgam(w)-lgam(v+w);
   }
 
   float Base2z::logp2largez(float logp) 
@@ -119,7 +119,7 @@ namespace MISCMATHS {
       float z = 0.0;
       
       if(!issmalllogp(logp)) {
-	z = MISCMATHS::ndtri(exp(logp));
+	z = ndtri(exp(logp));
       }
       else {
 	z = logp2largez(logp);

@@ -70,7 +70,7 @@
 #include "t2z.h"
 #include "newmat.h"
 #include "utils/tracer_plus.h"
-#include "libprob.h"
+#include "cprob.h"
 
 using namespace NEWMAT;
 using namespace Utilities;
@@ -87,9 +87,9 @@ namespace MISCMATHS {
       if(z>8)
 	throw Exception("z is too large to convert to t");
 
-      double p = MISCMATHS::ndtr(z);
+      double p = ndtr(z);
       cerr << "p = " << p << endl;
-      t = MISCMATHS::stdtri(dof,p);
+      t = stdtri(dof,p);
 
       return t;
     }
@@ -180,9 +180,9 @@ namespace MISCMATHS {
       
       if(!islarget(t,dof,logp)) {
 	//	cerr << "t = " << t << endl;
-	double p = MISCMATHS::stdtr(dof, t);
+	double p = stdtr(dof, t);
 	//cerr << "p = " << p << endl;
-	z = MISCMATHS::ndtri(p);
+	z = ndtri(p);
       }
       else {
 	
@@ -203,7 +203,7 @@ namespace MISCMATHS {
       float logp=0.0;
       
       if(!islarget(t,dof,logp)) {
-	logp = log(1-MISCMATHS::stdtr(dof, t));
+	logp = log(1-stdtr(dof, t));
       }
       else if(t<0) {
 	// t < 0 and abs(t) is large enough to require asymptotic approx.

@@ -13,7 +13,7 @@ SET(MISCMATHS_SOURCES
   sparsefn.cc
   rungekutta.cc)
 
-INCLUDE_DIRECTORIES( ../ ../newmat ../libprob ../libcprob )
+INCLUDE_DIRECTORIES( ../ ../newmat ../cprob )
 
 ADD_LIBRARY(miscmaths STATIC ${MISCMATHS_SOURCES})
 

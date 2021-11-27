@@ -71,7 +71,7 @@
 #include "utils/log.h"
 #include "utils/tracer_plus.h"
 #include <stdexcept>
-#include "libprob.h"
+#include "cprob.h"
 
 using namespace NEWMAT;
 using namespace Utilities;
@@ -170,9 +170,9 @@ namespace MISCMATHS {
 
     if(!islargef(f,d1,d2,logp)) {
 
-      double p = MISCMATHS::fdtr(d1, d2, f);
+      double p = fdtr(d1, d2, f);
 
-      z = MISCMATHS::ndtri(p);
+      z = ndtri(p);
     }
       else {
 
